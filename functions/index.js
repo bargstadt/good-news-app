@@ -3,12 +3,12 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import OpenAI from "openai";
 
-// getGoodNews Firebase onCall function
+// Firebase onCall function: getGoodNews
 export const getGoodNews = onCall(
   {
-    secrets: ["OPENAI_API_KEY"],   // Firebase secret for OpenAI API key
-    timeoutSeconds: 120,            // Increase timeout
-    memory: "1GB",                  // Optional: increase memory if needed
+    secrets: ["OPENAI_API_KEY"], // Firebase secret for OpenAI API key
+    timeoutSeconds: 120,         // Increase timeout
+    memory: "1GB",               // Optional: increase memory
     allowUnauthenticated: true, 
   },
   async (request) => {
@@ -29,10 +29,13 @@ export const getGoodNews = onCall(
     }
 
     try {
-      // Initialize OpenAI client
-      const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      // --- Initialize OpenAI client ---
+      const client = new OpenAI({
+                        apiKey: process.env.OPENAI_API_KEY,
+                        timeout: 120000, // 2 minutes
+                        });
 
-      // --- Build prompt ---
+      // --- Build dynamic prompt ---
       let prompt = "";
       if (scope === "local") {
         prompt = `Give me the real current top news stories for ${location} of the ${timeframe} through the lens of the ${lens}. Keep it insightful with a reflection and a light suggestion for current ways to take action to help in alignment with the text. Use only credible news outlets and provide references to the religious texts as well as the news source.`;
@@ -42,29 +45,34 @@ export const getGoodNews = onCall(
         prompt = `Give me the real current top news stories for the ${scope} news of the ${timeframe} through the lens of the ${lens}. Keep it insightful with a reflection and a light suggestion for current ways to take action to help in alignment with the text. Use only credible news outlets and provide references to the religious texts as well as the news source.`;
       }
 
-      // --- Call OpenAI GPT-5 with Web Search ---
-      const completion = await client.chat.completions.create({
-        model: "gpt-5-mini-2025-08-07",
-        messages: [{ role: "user", content: prompt }],
-        tools: [
-          {
-            type: "web_search",
-            tool_name: "web_search",
-            web_search_options: {
-              max_results: 5,
-              region: "US",
-              safe_search: true,
-            },
-          },
-        ],
-      });
+      // --- Call OpenAI GPT-5 / Search-Enabled Model ---
+        const completion = await client.chat.completions.create(
+        {
+            model: "gpt-5-search-api",
+            web_search_options: {},
+            messages: [{ role: "user", content: prompt }],
+        },
+        {
+            timeout: 120000, // 2 min
+        }
+        );
 
       const message = completion.choices[0].message.content;
 
       logger.info("Generated Good News successfully.");
-      return { message }; // Return JSON object for frontend
+      return { message }; // Return structured object to frontend
+
     } catch (error) {
       logger.error("Error generating good news:", error);
+
+      // Detect web search-specific issues
+      if (error?.response?.status === 400 && error?.response?.data?.error?.message?.includes("web_search")) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Web search tool is not enabled for this account or model variant."
+        );
+      }
+
       throw new HttpsError("internal", "Error generating good news", error);
     }
   }

@@ -14,7 +14,7 @@
     "openai": "^6.8.1"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "devDependencies": {
     "eslint": "^9.39.1"

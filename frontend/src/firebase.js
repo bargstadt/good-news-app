@@ -1,6 +1,9 @@
 // frontend/src/firebase.js
 import { initializeApp } from "firebase/app";
 import { getFunctions, httpsCallable } from "firebase/functions";
+// import { connectFunctionsEmulator } from "firebase/functions";
+
+
 
 // Your web app's Firebase configuration
 
@@ -17,7 +20,16 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Functions (deployed functions only)
 const functions = getFunctions(app);
+const hostname = window.location.hostname;
+console.log("Hostname is:", hostname);
 
+// if (hostname === "localhost") {
+//   console.log("Connecting to Functions emulator...");
+//   connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+//   console.log("Connected to emulator!");
+// } else {
+//   console.log("Running in production mode.");
+// }
 /**
  * Calls the getGoodNews Firebase onCall function
  * @param {Object} payload - { scope, lens, timeframe, location? }
