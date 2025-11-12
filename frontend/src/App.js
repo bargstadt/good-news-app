@@ -19,8 +19,14 @@ function App() {
     const params = { scope, lens, timeframe };
     if (scope === "local") params.location = location.trim();
 
-    const message = await fetchGoodNews(params);
-    setOutput(message);
+    try {
+      const result = await fetchGoodNews(params);
+      // Extract the string message instead of assigning the whole object
+      setOutput(result.message);
+    } catch (err) {
+      console.error("Error calling getGoodNews:", err);
+      setOutput(err.message || "An unexpected error occurred.");
+    }
   };
 
   return (
