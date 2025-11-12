@@ -1,0 +1,22 @@
+{
+  "name": "functions",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "shell": "firebase functions:shell"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.1.1",
+    "openai": "^6.8.1"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.1"
+  }
+}
