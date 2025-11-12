@@ -1,79 +1,105 @@
-import "dotenv/config";
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import "dotenv/config"; // for local development
+import * as functions from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import OpenAI from "openai";
 
-// Firebase onCall function: getGoodNews
-export const getGoodNews = onCall(
-  {
-    secrets: ["OPENAI_API_KEY"], // Firebase secret for OpenAI API key
-    timeoutSeconds: 120,         // Increase timeout
-    memory: "1GB",               // Optional: increase memory
-    allowUnauthenticated: true, 
-  },
-  async (request) => {
-    const { scope, lens, timeframe, location } = request.data || {};
+// --- Initialize OpenAI client ---
+const getOpenAIClient = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OpenAI API key not set.");
+  return new OpenAI({ apiKey, timeout: 300000 }); // 5 minutes
+};
 
-    // --- Validate parameters ---
-    if (!scope || !lens || !timeframe) {
-      logger.error("Missing parameters:", { scope, lens, timeframe });
-      throw new HttpsError(
-        "invalid-argument",
-        "Missing parameters: scope, lens, or timeframe"
-      );
+// --- Prompt builder ---
+const buildPrompt = ({
+  scope,
+  location,
+  timeframe,
+  lens,
+  topicText = "",
+}) => {
+  const locationText = scope === "local" ? location : scope === "us" ? "US" : scope;
+
+  return `
+Give me the **current top news stories** for ${locationText} within the past ${timeframe}, through the lens of ${lens}.
+Focus on **timely articles** only. Include a **short reflection** and a **light suggestion for action** aligned with the text.
+${topicText ? `Focus on the topic: ${topicText}.` : ""}
+For every news story, include a **credible source and the URL** to the article.
+Format the output clearly with each story separated, and reference religious texts where relevant.
+Please do not recommend any follow up steps as end the user will not be able to continue conversation.
+  `.trim();
+};
+
+// --- HTTP Cloud Function ---
+export const getGoodNewsHttp = functions.onRequest(
+  {
+    timeoutSeconds: 300,
+    memory: "1GB",
+    secrets: ["OPENAI_API_KEY"],
+  },
+  async (req, res) => {
+    // --- CORS headers ---
+    res.setHeader("Access-Control-Allow-Origin", "*"); // or your frontend URL
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
     }
 
+    if (req.method !== "POST") {
+      res.status(405).send({ error: "Method not allowed" });
+      return;
+    }
+
+    const { scope, lens, timeframe, location, topic } = req.body || {};
+    const topicText = topic?.trim() || "";
+
+    if (!scope || !lens || !timeframe) {
+      res.status(400).send({ error: "Missing parameters: scope, lens, or timeframe" });
+      return;
+    }
     if (scope === "local" && !location) {
-      logger.error("Missing location for local news");
-      throw new HttpsError("invalid-argument", "Missing location for local news");
+      res.status(400).send({ error: "Missing location for local news" });
+      return;
     }
 
     try {
-      // --- Initialize OpenAI client ---
-      const client = new OpenAI({
-                        apiKey: process.env.OPENAI_API_KEY,
-                        timeout: 120000, // 2 minutes
-                        });
+      const client = getOpenAIClient();
+      const prompt = buildPrompt({ scope, location, timeframe, lens, topicText });
 
-      // --- Build dynamic prompt ---
-      let prompt = "";
-      if (scope === "local") {
-        prompt = `Give me the real current top news stories for ${location} of the ${timeframe} through the lens of the ${lens}. Keep it insightful with a reflection and a light suggestion for current ways to take action to help in alignment with the text. Use only credible news outlets and provide references to the religious texts as well as the news source.`;
-      } else if (scope === "us") {
-        prompt = `Give me the real current top news stories for the US for the ${timeframe} through the lens of the ${lens}. Keep it insightful with a reflection and a light suggestion for current ways to take action to help in alignment with the text. Use only credible news outlets and provide references to the religious texts as well as the news source.`;
-      } else {
-        prompt = `Give me the real current top news stories for the ${scope} news of the ${timeframe} through the lens of the ${lens}. Keep it insightful with a reflection and a light suggestion for current ways to take action to help in alignment with the text. Use only credible news outlets and provide references to the religious texts as well as the news source.`;
-      }
+      // --- Set streaming headers ---
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
 
-      // --- Call OpenAI GPT-5 / Search-Enabled Model ---
-        const completion = await client.chat.completions.create(
-        {
-            model: "gpt-5-search-api",
-            web_search_options: {},
-            messages: [{ role: "user", content: prompt }],
-        },
-        {
-            timeout: 120000, // 2 min
+      // --- OpenAI streaming request ---
+      const completion = await client.chat.completions.create({
+        model: "gpt-5-search-api",
+        messages: [{ role: "user", content: prompt }],
+        stream: true,
+      });
+
+      try {
+        for await (const chunk of completion) {
+          const content = chunk.choices?.[0]?.delta?.content;
+          if (content) {
+            res.write(`data: ${JSON.stringify(content)}\n\n`);
+          }
         }
-        );
 
-      const message = completion.choices[0].message.content;
-
-      logger.info("Generated Good News successfully.");
-      return { message }; // Return structured object to frontend
-
+        res.write("event: done\ndata: {}\n\n");
+        res.end();
+      } catch (streamErr) {
+        logger.error("OpenAI streaming error:", streamErr);
+        res.write(`event: error\ndata: ${JSON.stringify({ message: streamErr.message })}\n\n`);
+        res.end();
+      }
     } catch (error) {
       logger.error("Error generating good news:", error);
-
-      // Detect web search-specific issues
-      if (error?.response?.status === 400 && error?.response?.data?.error?.message?.includes("web_search")) {
-        throw new HttpsError(
-          "failed-precondition",
-          "Web search tool is not enabled for this account or model variant."
-        );
-      }
-
-      throw new HttpsError("internal", "Error generating good news", error);
+      res.write(`event: error\ndata: ${JSON.stringify({ message: error.message })}\n\n`);
+      res.end();
     }
   }
 );

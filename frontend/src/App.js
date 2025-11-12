@@ -1,46 +1,87 @@
+// const FUNCTION_URL = "https://getgoodnewshttp-2g3ysd6tza-uc.a.run.app";
+
+
 import React, { useState } from "react";
-import { fetchGoodNews } from "./firebase";
+import ReactMarkdown from "react-markdown";
+
+// Replace with your deployed Cloud Function URL
+const FUNCTION_URL = "https://getgoodnewshttp-2g3ysd6tza-uc.a.run.app";
 
 function App() {
   const [scope, setScope] = useState("world");
   const [lens, setLens] = useState("Gospel");
   const [timeframe, setTimeframe] = useState("day");
   const [location, setLocation] = useState("");
+  const [topic, setTopic] = useState(""); // new topic input
   const [output, setOutput] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleFetchGoodNews = async () => {
-    // Validate local news input
     if (scope === "local" && !location.trim()) {
       setOutput("Please enter a city/state for local news.");
       return;
     }
 
-    setOutput("Loading...");
-    const params = { scope, lens, timeframe };
-    if (scope === "local") params.location = location.trim();
+    setOutput("");
+    setLoading(true);
+
+    const payload = { scope, lens, timeframe };
+    if (scope === "local") payload.location = location.trim();
+    if (topic.trim()) payload.topic = topic.trim(); // include topic if provided
 
     try {
-      const result = await fetchGoodNews(params);
-      // Extract the string message instead of assigning the whole object
-      setOutput(result.message);
+      const res = await fetch(FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.body) throw new Error("No response body from server");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+
+        for (let i = 0; i < chunks.length - 1; i++) {
+          const line = chunks[i];
+          if (line.startsWith("data:")) {
+            const dataStr = line.replace(/^data: /, "").trim();
+            if (dataStr && dataStr !== "{}") {
+              try {
+                const content = JSON.parse(dataStr);
+                setOutput((prev) => prev + content);
+              } catch {
+                // ignore parse errors for empty chunks
+              }
+            }
+          }
+        }
+
+        buffer = chunks[chunks.length - 1]; // leftover
+      }
+
     } catch (err) {
-      console.error("Error calling getGoodNews:", err);
-      setOutput(err.message || "An unexpected error occurred.");
+      console.error("Error fetching Good News:", err);
+      setOutput("Failed to load Good News.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: 600 }}>
+    <div style={{ padding: 20, fontFamily: "sans-serif", maxWidth: 600 }}>
       <h1>Good News</h1>
-      <p>See today’s news through the lens of sacred texts.</p>
 
       <label>
         Scope:
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value)}
-          style={{ marginLeft: "0.5rem" }}
-        >
+        <select value={scope} onChange={(e) => setScope(e.target.value)} style={{ marginLeft: 8 }}>
           <option value="local">Local</option>
           <option value="us">US</option>
           <option value="world">World</option>
@@ -48,7 +89,7 @@ function App() {
       </label>
 
       {scope === "local" && (
-        <div style={{ marginTop: "1rem" }}>
+        <div style={{ marginTop: 8 }}>
           <label>
             City / State:
             <input
@@ -56,29 +97,20 @@ function App() {
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="e.g., Austin, TX"
-              style={{
-                marginLeft: "0.5rem",
-                padding: "0.25rem",
-                borderRadius: "0.25rem",
-                border: "1px solid #ccc",
-              }}
+              style={{ marginLeft: 8, padding: 4, borderRadius: 4, border: "1px solid #ccc" }}
             />
           </label>
         </div>
       )}
 
-      <div style={{ marginTop: "1rem" }}>
+      <div style={{ marginTop: 8 }}>
         <label>
           Lens:
-          <select
-            value={lens}
-            onChange={(e) => setLens(e.target.value)}
-            style={{ marginLeft: "0.5rem" }}
-          >
+          <select value={lens} onChange={(e) => setLens(e.target.value)} style={{ marginLeft: 8 }}>
             <option value="Gospel">Gospel</option>
             <option value="Torah">Torah</option>
-            <option value="Hindu texts">Hindu texts</option>
             <option value="Quran">Quran</option>
+            <option value="Hindu texts">Hindu texts</option>
             <option value="Dhammapada">Dhammapada</option>
             <option value="Guru Granth Sahib">Guru Granth Sahib</option>
             <option value="Tao Te Ching">Tao Te Ching</option>
@@ -89,14 +121,10 @@ function App() {
         </label>
       </div>
 
-      <div style={{ marginTop: "1rem" }}>
+      <div style={{ marginTop: 8 }}>
         <label>
           Timeframe:
-          <select
-            value={timeframe}
-            onChange={(e) => setTimeframe(e.target.value)}
-            style={{ marginLeft: "0.5rem" }}
-          >
+          <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} style={{ marginLeft: 8 }}>
             <option value="day">Day</option>
             <option value="week">Week</option>
             <option value="month">Month</option>
@@ -105,25 +133,54 @@ function App() {
         </label>
       </div>
 
-      <div style={{ marginTop: "1rem" }}>
+      {/* New topic input */}
+      <div style={{ marginTop: 8 }}>
+        <label>
+          Topic (optional):
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="e.g., climate change, tech, sports"
+            style={{ marginLeft: 8, padding: 4, borderRadius: 4, border: "1px solid #ccc", width: "60%" }}
+          />
+        </label>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
         <button
           onClick={handleFetchGoodNews}
+          disabled={loading}
           style={{
-            padding: "0.5rem 1rem",
+            padding: "6px 12px",
             background: "#007bff",
-            color: "white",
+            color: "#fff",
             border: "none",
-            borderRadius: "0.5rem",
+            borderRadius: 6,
             cursor: "pointer",
           }}
         >
-          Get Good News
+          {loading ? "Loading..." : "Get Good News"}
         </button>
       </div>
 
-      <pre style={{ marginTop: "2rem", whiteSpace: "pre-wrap" }}>{output}</pre>
+      {/* Output */}
+      <div
+        style={{
+          marginTop: 16,
+          maxHeight: 400,
+          overflowY: "auto",
+          padding: 8,
+          border: "1px solid #ccc",
+          borderRadius: 4,
+          backgroundColor: "#f9f9f9",
+        }}
+      >
+        <ReactMarkdown>{output}</ReactMarkdown>
+      </div>
     </div>
   );
 }
 
 export default App;
+
