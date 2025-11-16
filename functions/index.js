@@ -21,12 +21,18 @@ const buildPrompt = ({
   const locationText = scope === "local" ? location : scope === "us" ? "US" : scope;
 
   return `
-Give me the **current top news stories** for ${locationText} within the past ${timeframe}, through the lens of ${lens}.
-Focus on **timely articles** only. Include a **short reflection** and a **light suggestion for action** aligned with the text.
-${topicText ? `Focus on the topic: ${topicText}.` : ""}
-For every news story, include a **credible source and the URL** to the article.
-Format the output clearly with each story separated, and reference religious texts where relevant.
-Please do not recommend any follow up steps as end the user will not be able to continue conversation.
+Give me the **current top news stories** for ${locationText} in the past ${timeframe}, through the lens of ${lens}.  
+${topicText ? `Focus on the topic: ${topicText}.` : ""}  
+
+- Prioritize **timely articles** only — the story doesn't have to be about ${lens}, but it should be current and relevant.  
+- Include only the **leading stories of the ${timeframe}, unless a specific topic is requested.  
+- For each news story, provide:  
+  1. A **brief summary** (2-3 sentences)  
+  2. A **credible, reputable source** and the URL to the article  
+  3. A **short reflection** on the story from the perspective of ${lens}  
+  4. A **call to action** that aligns with the message or implications of the story, based on ${lens}  
+
+Please do **not** suggest follow-up steps for the user (i.e., don't propose continuing the conversation or next questions).  
   `.trim();
 };
 

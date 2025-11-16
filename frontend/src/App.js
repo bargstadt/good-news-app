@@ -96,7 +96,7 @@ function App() {
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g., Austin, TX"
+              placeholder="e.g., Des Moines, IA"
               style={{ marginLeft: 8, padding: 4, borderRadius: 4, border: "1px solid #ccc" }}
             />
           </label>
@@ -133,7 +133,6 @@ function App() {
         </label>
       </div>
 
-      {/* New topic input */}
       <div style={{ marginTop: 8 }}>
         <label>
           Topic (optional):
@@ -141,7 +140,7 @@ function App() {
             type="text"
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g., climate change, tech, sports"
+            placeholder="e.g., tech, sports, politics"
             style={{ marginLeft: 8, padding: 4, borderRadius: 4, border: "1px solid #ccc", width: "60%" }}
           />
         </label>
